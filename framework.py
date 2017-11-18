@@ -1,0 +1,128 @@
+from datetime import datetime
+import utils
+import os
+from visit_models import experiment_dict as visit
+from rating_models import experiment_dict as rating
+
+
+import pandas as pd
+import numpy as np
+from sklearn.externals import joblib
+from sklearn.model_selection import cross_val_score, cross_val_predict, train_test_split
+from sklearn.metrics import accuracy_score, confusion_matrix, mean_squared_error
+import matplotlib.pyplot as plt
+import seaborn as sb
+
+
+def run(args):
+
+    task = args['model']
+
+    # 1.)Load data for training model
+    X_train_full, y_train_full = utils.load_train_data(task)
+
+    if args['submission']:
+        # making a submission; train on all given data
+        print('fitting models to entire training set')
+        X_train, y_train = X_train_full, y_train_full
+        X_test = utils.load_test_data(task)
+    else:
+        # running an experiment - cross validate with train/test split
+        train_fraction = args['train_fraction']
+        print('fitting models to cv train/test split with train% = {}'.format(train_fraction))
+        X_train, X_val, y_train, y_val = train_test_split(X_train_full,y_train_full, test_size=train_fraction, random_state=args['random_state'])
+
+
+    # 2.) Get pipeline
+    if task == 'Visit':
+        pipeline_detail = visit[args['expt']]
+    else:
+        pipeline_detail = rating[args['expt']]
+    pipeline = pipeline_detail['pl']
+
+    # Fit model to training data
+    print('fitting model to array sizes (xtrain, ytrain)={}'.format(
+                                            [i.shape for i in [X_train, y_train]]))
+    print('fitting experiment pipeline with signature={}'.format(pipeline))
+    pipeline.fit(X_train, y_train)
+
+    # 3.) For non-submission experiments, get the best parameters from grid search
+    if args['submission']:
+        fname_spec = '_submission_'
+    else:
+        # log all results + call out the winner
+        if hasattr(pipeline, 'best_params_'):
+            print('best gridsearch score={}'.format(pipeline.best_score_))
+            print('best set of pipeline params={}'.format(pipeline.best_params_))
+            print('now displaying all pipeline param scores...')
+            cv_results = pipeline.cv_results_
+            for params, mean_score, scores in list(zip(cv_results['params'], cv_results['mean_test_score'], cv_results['std_test_score'])):
+                print("{:0.3f} (+/-{:0.03f}) for {}".format(mean_score, scores.std() * 2, params))
+        fname_spec = '_expt_'
+
+    model_name = utils.short_name(pipeline) + \
+                 fname_spec + \
+                 datetime.utcnow().strftime('%Y-%m-%d_%H%M%S')
+
+
+
+    # 4.) Prepare submission
+    if args['submission']:
+        # make predictions for a leaderboard submission
+        print('writing predictions to formatted submission file')
+        predictions = pipeline.predict(X_test)
+        if hasattr(pipeline, 'best_params_'):
+            print('predicting test values with best-choice gridsearch params')
+        utils.create_submission(predictions, pipeline_detail['name'], X_test)
+    else:
+        # otherwise, run a cross-validation for test accuracy
+        cv = args['k-fold']
+        print('cross validating model predictions with cv={}'.format(cv))
+        predictions = cross_val_predict(pipeline, X_val, y_val, cv=cv)
+
+        if task == 'Visit':
+            print('obtained accuracy = {:.2f} with cv={}, pipeline={} '.format(
+                # mean_squared_error(y_val, predictions),
+                accuracy_score(y_val, predictions),
+                cv,
+                pipeline))
+        else:
+            print('obtained mse = {:.2f} with cv={}, pipeline={} '.format(
+                mean_squared_error(y_val, predictions),
+                cv,
+                pipeline))
+
+        if args['cross_val_score']:
+            # this gives a better idea of uncertainty, but it adds 'cv' more
+            print('cross validating model accuracy with cv={}'.format(cv))
+            scores = cross_val_score(pipeline, X_val, y_val, cv=cv)
+            print('obtained accuracy={:0.2f}% +/- {:0.2f} with cv={}, \
+                                        pipeline={} '.format(scores.mean() * 100,
+                                                             scores.std() * 100 * 2,
+                                                             cv,
+                                                             pipeline))
+
+        # if running an experiment, plot confusion matrix for review
+        # print('calculating confusion matrix')
+        # try:
+        #     sb.heatmap(confusion_matrix(y_val, predictions))
+        # except RuntimeError as e:
+        #     print('plotting error. matplotlib backend may need to be changed (see readme). error={}'.format(e))
+        #     print('plot may still have been saved, and model has already been saved to disk.')
+        # try:
+        #     plt.title(model_name + ' [expt] ({:.2f}%)'.format(scores.mean() * 100))
+        # except NameError:
+        #     print('didnt find "scores" from cross_val_score, calculating accuracy by accuracy_score()')
+        #     plt.title(model_name + ' [expt] ({:.2f}%)'.format(accuracy_score(y_val, predictions) * 100))
+        # plt.xlabel("True")
+        # plt.ylabel("Pred")
+        # print('saving confusion matrix')
+        # plt.savefig(os.path.join('saved_models', model_name) + '.pdf',
+        #             format='pdf',
+        #             bbox_inches='tight')
+
+    print('completed with pipeline {}'.format(pipeline_detail['name']))
+
+
+
+
