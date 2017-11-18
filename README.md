@@ -14,4 +14,8 @@ In fact, part of the code comes from an adaptation of his repository: </br>
 **MNIST + scikit-learn** https://github.com/jrmontag/mnist-sklearn 
 </br>
 </br>
-I acknowledge and am grateful for his contribution and knowledge sharing.
+I also use DataframeMapper from sklearn-pandas to help bridge pandas DF to work with sklearn Pipeline. Helps a lot! </br>
+**sklearn-pandas** https://github.com/scikit-learn-contrib/sklearn-pandas
+</br>
+</br>
+I acknowledge and am grateful for their contribution and knowledge sharing.
