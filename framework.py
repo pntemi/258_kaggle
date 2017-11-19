@@ -12,42 +12,49 @@ from sklearn.model_selection import cross_val_score, cross_val_predict, train_te
 from sklearn.metrics import accuracy_score, confusion_matrix, mean_squared_error
 import matplotlib.pyplot as plt
 import seaborn as sb
-
+from sklearn.preprocessing import LabelBinarizer
+from custom_estimators.multi_labels import MultiLabelBinarizer
 
 def run(args):
 
     task = args['model']
+    submit = args['submission']
 
     # 1.)Load data for training model
     X_train_full, y_train_full = utils.load_train_data(task)
 
-    if args['submission']:
+    if submit:
         # making a submission; train on all given data
         print('fitting models to entire training set')
         X_train, y_train = X_train_full, y_train_full
         X_test = utils.load_test_data(task)
     else:
         # running an experiment - cross validate with train/test split
-        train_fraction = args['train_fraction']
-        print('fitting models to cv train/test split with train% = {}'.format(train_fraction))
-        X_train, X_val, y_train, y_val = train_test_split(X_train_full,y_train_full, test_size=train_fraction, random_state=args['random_state'])
+        test_size = args['test_size']
+        print('fitting models to cv train/test split with train% = {}'.format(1-test_size))
+        X_train, X_val, y_train, y_val = train_test_split(X_train_full,y_train_full, test_size=test_size, random_state=args['random_state'])
 
 
     # 2.) Get pipeline
     if task == 'Visit':
         pipeline_detail = visit[args['expt']]
+        X_train, y_train = utils.sample_negatives(X_train, y_train)
+        if not submit:
+            X_val, y_val = utils.sample_negatives(X_val, y_val)
     else:
         pipeline_detail = rating[args['expt']]
+
     pipeline = pipeline_detail['pl']
 
+
     # Fit model to training data
-    print('fitting model to array sizes (xtrain, ytrain)={}'.format(
-                                            [i.shape for i in [X_train, y_train]]))
+    print('fitting model to array sizes (xtrain, ytrain)={}'.format([i.shape for i in [X_train, y_train]]))
     print('fitting experiment pipeline with signature={}'.format(pipeline))
+
     pipeline.fit(X_train, y_train)
 
     # 3.) For non-submission experiments, get the best parameters from grid search
-    if args['submission']:
+    if submit:
         fname_spec = '_submission_'
     else:
         # log all results + call out the winner
@@ -60,29 +67,25 @@ def run(args):
                 print("{:0.3f} (+/-{:0.03f}) for {}".format(mean_score, scores.std() * 2, params))
         fname_spec = '_expt_'
 
-    model_name = utils.short_name(pipeline) + \
-                 fname_spec + \
-                 datetime.utcnow().strftime('%Y-%m-%d_%H%M%S')
+    model_name = utils.short_name(pipeline) + fname_spec + datetime.utcnow().strftime('%Y-%m-%d_%H%M%S')
+
 
 
 
     # 4.) Prepare submission
-    if args['submission']:
-        # make predictions for a leaderboard submission
+    if submit:
         print('writing predictions to formatted submission file')
         predictions = pipeline.predict(X_test)
         if hasattr(pipeline, 'best_params_'):
             print('predicting test values with best-choice gridsearch params')
         utils.create_submission(predictions, pipeline_detail['name'], X_test)
     else:
-        # otherwise, run a cross-validation for test accuracy
         cv = args['k-fold']
         print('cross validating model predictions with cv={}'.format(cv))
         predictions = cross_val_predict(pipeline, X_val, y_val, cv=cv)
 
         if task == 'Visit':
             print('obtained accuracy = {:.2f} with cv={}, pipeline={} '.format(
-                # mean_squared_error(y_val, predictions),
                 accuracy_score(y_val, predictions),
                 cv,
                 pipeline))
