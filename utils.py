@@ -13,6 +13,8 @@ import sys
 import gzip
 import pandas as pd
 import numpy as np
+import random
+from collections import defaultdict
 
 # set up a logger
 util_logr = logging.getLogger(__name__)
@@ -88,3 +90,39 @@ def load_test_data(model):
 
     return pd.DataFrame(test, columns=['user', 'item'])
 
+
+def get_categories(business):
+    business_cat = defaultdict(set)
+    b_set = set(business)
+
+    for l in read_gz("data/train.json.gz"):
+        bid, categories = l['businessID'], l['categories']
+        if bid in b_set:
+            business_cat[bid].update(categories)
+
+    return business_cat
+
+
+def sample_negatives(X, y):
+    users, items = X['user'].tolist(), X['item'].tolist()
+    pair_set = set(list(zip(users, items)))
+
+    n = len(y)
+
+    u_set, i_set = list(set(users)), list(set(items))
+    u_n, i_n = len(u_set), len(i_set)
+
+    X_new = list(zip(users,items))
+    y_new = list(y) + [0] * n
+    while n > 0:
+        u = random.randint(0, u_n - 1)
+        i = random.randint(0, i_n - 1)
+        if (users[u], items[i]) not in pair_set:
+            X_new.append((users[u], items[i]))
+            n -= 1
+
+    shuffled = list(zip(X_new, y_new))
+    random.shuffle(shuffled)
+    X_nnew, y_new = zip(*shuffled)
+    X_new = [list(elem) for elem in X_nnew]
+    return pd.DataFrame(X_new, columns=['user', 'item']), np.array(y_new)
