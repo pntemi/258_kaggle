@@ -16,6 +16,7 @@ import numpy as np
 import random
 from collections import defaultdict
 
+
 # set up a logger
 util_logr = logging.getLogger(__name__)
 util_logr.setLevel(logging.DEBUG)
@@ -60,7 +61,7 @@ def create_submission(predictions, sub_name, data):
     with open('submissions/{}_{}.txt'.format(now, submission_name), 'w') as f:
         f.write('userID-businessID,prediction\n')
         for u, i, p in list(zip(users, items, predictions)):
-            f.write(str(u) + "-" + str(i) + "," + str(p) + "\n")
+            f.write(str(u) + "-" + str(i) + "," + str(min(p,5)) + "\n")
     return True
 
 
@@ -71,7 +72,7 @@ def read_gz(f):
 
 def load_train_data(model):
     X, y = [], []
-    for l in read_gz("data/train.json.gz"):
+    for l in read_gz("/Users/ntemiyasathit/Documents/CSE258/258_kaggle/data/train.json.gz"):
         user, business = l['userID'], l['businessID']
         X.append((user, business))
         if model == 'Visit':
@@ -95,7 +96,7 @@ def get_categories(business):
     business_cat = defaultdict(set)
     b_set = set(business)
 
-    for l in read_gz("data/train.json.gz"):
+    for l in read_gz("/Users/ntemiyasathit/Documents/CSE258/258_kaggle/data/train.json.gz"):
         bid, categories = l['businessID'], l['categories']
         if bid in b_set:
             business_cat[bid].update(categories)
@@ -103,17 +104,33 @@ def get_categories(business):
     return business_cat
 
 
-def sample_negatives(X, y):
+def get_user_rating(users):
+    user_ratings = defaultdict(list)
+    u_set = set(users)
+
+    for l in read_gz("/Users/ntemiyasathit/Documents/CSE258/258_kaggle/data/train.json.gz"):
+        user, business, rating = l['userID'], l['businessID'], l['rating']
+        if user in u_set:
+            user_ratings[user].append(l['rating'])
+
+    user_average = {}
+    for u in user_ratings:
+        user_average[u] = sum(user_ratings[u]) / len(user_ratings[u])
+
+    return user_average, user_ratings
+
+
+def sample_negatives(X, y, times):
     users, items = X['user'].tolist(), X['item'].tolist()
     pair_set = set(list(zip(users, items)))
 
-    n = len(y)
+    n = len(y)*times
 
     u_set, i_set = list(set(users)), list(set(items))
     u_n, i_n = len(u_set), len(i_set)
 
     X_new = list(zip(users,items))
-    y_new = list(y) + [0] * n
+    y_new = list(y) + [-1] * n
     while n > 0:
         u = random.randint(0, u_n - 1)
         i = random.randint(0, i_n - 1)
@@ -126,3 +143,12 @@ def sample_negatives(X, y):
     X_nnew, y_new = zip(*shuffled)
     X_new = [list(elem) for elem in X_nnew]
     return pd.DataFrame(X_new, columns=['user', 'item']), np.array(y_new)
+
+
+def modify_visit_prediction(predictions, X_test):
+    X_rating, y_rating = load_train_data("Rating")
+    X_rating = X_rating.values.tolist()
+    X_rating = [(i[0], i[1]) for i in X_rating]
+
+
+
