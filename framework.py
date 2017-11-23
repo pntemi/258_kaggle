@@ -1,19 +1,11 @@
 from datetime import datetime
 import utils
-import os
 from visit_models import experiment_dict as visit
 from rating_models import experiment_dict as rating
 
-
-import pandas as pd
-import numpy as np
-from sklearn.externals import joblib
 from sklearn.model_selection import cross_val_score, cross_val_predict, train_test_split
 from sklearn.metrics import accuracy_score, confusion_matrix, mean_squared_error
-import matplotlib.pyplot as plt
 import seaborn as sb
-from sklearn.preprocessing import LabelBinarizer
-from custom_estimators.multi_labels import MultiLabelBinarizer
 
 def run(args):
 
@@ -38,9 +30,9 @@ def run(args):
     # 2.) Get pipeline
     if task == 'Visit':
         pipeline_detail = visit[args['expt']]
-        X_train, y_train = utils.sample_negatives(X_train, y_train)
+        X_train, y_train = utils.sample_negatives(X_train, y_train, 2)
         if not submit:
-            X_val, y_val = utils.sample_negatives(X_val, y_val)
+            X_val, y_val = utils.sample_negatives(X_val, y_val, 1)
     else:
         pipeline_detail = rating[args['expt']]
 
@@ -70,8 +62,6 @@ def run(args):
     model_name = utils.short_name(pipeline) + fname_spec + datetime.utcnow().strftime('%Y-%m-%d_%H%M%S')
 
 
-
-
     # 4.) Prepare submission
     if submit:
         print('writing predictions to formatted submission file')
@@ -84,15 +74,30 @@ def run(args):
         print('cross validating model predictions with cv={}'.format(cv))
         predictions = cross_val_predict(pipeline, X_val, y_val, cv=cv)
 
+        # print("cross val prediction", accuracy_score(y_val, predictions))
+        print("cross val prediction", mean_squared_error(y_val, predictions))
+
+        predictions_train = pipeline.predict(X_train)
+        predictions_test = pipeline.predict(X_val)
+
         if task == 'Visit':
-            print('obtained accuracy = {:.2f} with cv={}, pipeline={} '.format(
-                accuracy_score(y_val, predictions),
-                cv,
+            print('obtained train accuracy = {:.2f}, test accuracy = {:.2f}  pipeline={} '.format(
+                accuracy_score(y_train, predictions_train),
+                accuracy_score(y_val, predictions_test),
                 pipeline))
+
+            print('calculating confusion matrix')
+            try:
+                cf = confusion_matrix(y_val, predictions)
+                print("confusion matrix: ", cf)
+                sb.heatmap(cf)
+            except RuntimeError as e:
+                print('plotting error. matplotlib backend may need to be changed (see readme). error={}'.format(e))
+                print('plot may still have been saved, and model has already been saved to disk.')
         else:
-            print('obtained mse = {:.2f} with cv={}, pipeline={} '.format(
-                mean_squared_error(y_val, predictions),
-                cv,
+            print('obtained train mse = {:.2f} test mse={}, pipeline={} '.format(
+                mean_squared_error(y_train, predictions_train),
+                mean_squared_error(y_val, predictions_test),
                 pipeline))
 
         if args['cross_val_score']:
@@ -105,24 +110,7 @@ def run(args):
                                                              cv,
                                                              pipeline))
 
-        # if running an experiment, plot confusion matrix for review
-        # print('calculating confusion matrix')
-        # try:
-        #     sb.heatmap(confusion_matrix(y_val, predictions))
-        # except RuntimeError as e:
-        #     print('plotting error. matplotlib backend may need to be changed (see readme). error={}'.format(e))
-        #     print('plot may still have been saved, and model has already been saved to disk.')
-        # try:
-        #     plt.title(model_name + ' [expt] ({:.2f}%)'.format(scores.mean() * 100))
-        # except NameError:
-        #     print('didnt find "scores" from cross_val_score, calculating accuracy by accuracy_score()')
-        #     plt.title(model_name + ' [expt] ({:.2f}%)'.format(accuracy_score(y_val, predictions) * 100))
-        # plt.xlabel("True")
-        # plt.ylabel("Pred")
-        # print('saving confusion matrix')
-        # plt.savefig(os.path.join('saved_models', model_name) + '.pdf',
-        #             format='pdf',
-        #             bbox_inches='tight')
+
 
     print('completed with pipeline {}'.format(pipeline_detail['name']))
 

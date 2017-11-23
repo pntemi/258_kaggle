@@ -1,13 +1,13 @@
 from framework import run
 
 args = {
-    'submission': False,
+    'submission': True,
     'test_size': 0.2,
     'random_state': 12345,
-    'expt': 'expt_1',
+    'expt': 'expt_4',
     'cross_val_score': False,
     'k-fold': 3,
-    'model': 'Visit'
+    'model': 'Rating'
     # 'model': 'Visit'
 }
 
