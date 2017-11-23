@@ -6,3 +6,4 @@ matplotlib==2.0.2
 seaborn==0.7.1
 pandas==0.20.3
 sklearn-pandas==1.6.0
+fastFM==0.2.10
